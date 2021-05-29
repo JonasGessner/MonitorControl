@@ -215,14 +215,95 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
 // MARK: - Media Key Tap delegate
 
+var repeatedKey: MediaKey?
+var repeatCount = 0
+
 extension AppDelegate: MediaKeyTapDelegate {
   func handle(mediaKey: MediaKey, event: KeyEvent?, modifiers: NSEvent.ModifierFlags?) {
+    let isRepeat = event?.keyRepeat ?? false
+    let down = event?.keyPressed ?? false
+
+    defer {
+      if !down {
+        repeatedKey = nil
+        repeatCount = 0
+      }
+      if isRepeat {
+        repeatCount += 1
+      }
+    }
+    
+    // The extra handling of volume keys here does the job of https://github.com/alberti42/iTunes-Volume-Control
+    // The handling of media keys here does the job of https://github.com/milgra/macmediakeyforwarder
+    if mediaKey == .previous && !down {
+      if mediaKey != repeatedKey {
+        MusicApp.shared.previous()
+      }
+      else {
+        MusicApp.shared.resume()
+      }
+      return
+    }
+    else if mediaKey == .next && !down {
+      if mediaKey != repeatedKey {
+        MusicApp.shared.next()
+      }
+      else {
+        MusicApp.shared.resume()
+      }
+      return
+    }
+    
+    // Only want up events for media keys so stop here is this is a key up event
+    guard down else {
+      return
+    }
+    
+    if isRepeat {
+      repeatedKey = mediaKey
+    }
+    
+    if mediaKey == .previous && isRepeat {
+      if (repeatCount % 10) == 0 {
+        MusicApp.shared.rewind()
+      }
+      return
+    }
+    else if mediaKey == .next && isRepeat {
+      if (repeatCount % 10) == 0 {
+        MusicApp.shared.fastForward()
+      }
+      return
+    }
+    else if mediaKey == .playPause {
+      MusicApp.shared.togglePlay()
+      return
+    }
+    
     if self.handleOpenPrefPane(mediaKey: mediaKey, event: event, modifiers: modifiers) {
       return
     }
+    
+    let isSmallIncrement = modifiers?.isSuperset(of: NSEvent.ModifierFlags([.option])) ?? false
+    let isShifted = modifiers?.isSuperset(of: NSEvent.ModifierFlags([.shift])) ?? false
 
-    let isSmallIncrement = modifiers?.isSuperset(of: NSEvent.ModifierFlags([.shift, .option])) ?? false
-
+    if !isShifted && // When shifted control monitor
+        (mediaKey == .volumeUp || mediaKey == .volumeDown || mediaKey == .mute) && // only looking for volume keys
+        MusicApp.shared.playing && // Only when Music is playing
+        MusicApp.shared.airplaying { // And only when airplaying
+      if mediaKey == .volumeUp {
+        MusicApp.shared.volume += isSmallIncrement ? 1 : 3
+      }
+      else if mediaKey == .volumeDown {
+        MusicApp.shared.volume -= isSmallIncrement ? 1 : 3
+      }
+      else if mediaKey == .mute {
+        MusicApp.shared.volume = 0
+      }
+      DisplayManager.shared.getCurrentDisplay()?.showOsd(command: .audioSpeakerVolume, value: MusicApp.shared.volume)
+      return
+    }
+    
     // control internal display when holding ctrl modifier
     let isControlModifier = modifiers?.isSuperset(of: NSEvent.ModifierFlags([.control])) ?? false
     if isControlModifier, mediaKey == .brightnessUp || mediaKey == .brightnessDown {
@@ -233,8 +314,7 @@ extension AppDelegate: MediaKeyTapDelegate {
     }
 
     let oppositeKey: MediaKey? = self.oppositeMediaKey(mediaKey: mediaKey)
-    let isRepeat = event?.keyRepeat ?? false
-
+    
     // If the opposite key to the one being held has an active timer, cancel it - we'll be going in the opposite direction
     if let oppositeKey = oppositeKey, let oppositeKeyTimer = self.keyRepeatTimers[oppositeKey], oppositeKeyTimer.isValid {
       oppositeKeyTimer.invalidate()
@@ -317,6 +397,8 @@ extension AppDelegate: MediaKeyTapDelegate {
     default:
       keys = [.brightnessUp, .brightnessDown, .mute, .volumeUp, .volumeDown]
     }
+    
+    keys += [.next, .previous, .playPause]
 
     if self.coreAudio.defaultOutputDevice?.canSetVirtualMasterVolume(scope: .output) == true {
       // Remove volume related keys.
@@ -327,7 +409,7 @@ extension AppDelegate: MediaKeyTapDelegate {
     self.mediaKeyTap?.stop()
     // returning an empty array listens for all mediakeys in MediaKeyTap
     if keys.count > 0 {
-      self.mediaKeyTap = MediaKeyTap(delegate: self, for: keys, observeBuiltIn: true)
+      self.mediaKeyTap = MediaKeyTap(delegate: self, on: .keyDownAndUp, for: keys, observeBuiltIn: true)
       self.mediaKeyTap?.start()
     }
   }
