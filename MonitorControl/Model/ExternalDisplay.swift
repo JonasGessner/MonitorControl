@@ -31,8 +31,6 @@ class ExternalDisplay: Display {
     }
   }
 
-  private var audioPlayer: AVAudioPlayer?
-
   override init(_ identifier: CGDirectDisplayID, name: String, vendorNumber: UInt32?, modelNumber: UInt32?) {
     super.init(identifier, name: name, vendorNumber: vendorNumber, modelNumber: modelNumber)
     self.ddc = DDC(for: identifier)
@@ -54,7 +52,7 @@ class ExternalDisplay: Display {
     return self.getValue(for: .audioMuteScreenBlank) == 1
   }
 
-  func toggleMute(fromVolumeSlider: Bool = false) {
+  func toggleMute(fromVolumeSlider: Bool = false, forceAudio: Bool) {
     var muteValue: Int
     var volumeOSDValue: Int
 
@@ -75,9 +73,9 @@ class ExternalDisplay: Display {
 
     let volumeDDCValue = UInt16(volumeOSDValue)
 
-    guard self.ddc?.write(command: .audioSpeakerVolume, value: volumeDDCValue) == true else {
-      return
-    }
+//    guard self.ddc?.write(command: .audioSpeakerVolume, value: volumeDDCValue) == true else {
+//      return
+//    }
 
     if self.supportsMuteCommand() {
       guard self.ddc?.write(command: .audioMuteScreenBlank, value: UInt16(muteValue)) == true else {
@@ -89,10 +87,10 @@ class ExternalDisplay: Display {
 
     if !fromVolumeSlider {
       self.hideDisplayOsd()
-      self.showOsd(command: volumeOSDValue > 0 ? .audioSpeakerVolume : .audioMuteScreenBlank, value: volumeOSDValue, roundChiclet: true)
+//      self.showOsd(command: volumeOSDValue > 0 ? .audioSpeakerVolume : .audioMuteScreenBlank, value: volumeOSDValue, roundChiclet: true)
 
       if volumeOSDValue > 0 {
-        self.playVolumeChangedSound()
+        playVolumeChangedSound(force: forceAudio)
       }
 
       if let slider = self.volumeSliderHandler?.slider {
@@ -101,7 +99,7 @@ class ExternalDisplay: Display {
     }
   }
 
-  func stepVolume(isUp: Bool, isSmallIncrement: Bool) {
+  func stepVolume(isUp: Bool, isSmallIncrement: Bool, forceAudio: Bool) {
     var muteValue: Int?
     let volumeOSDValue = self.calcNewValue(for: .audioSpeakerVolume, isUp: isUp, isSmallIncrement: isSmallIncrement)
     let volumeDDCValue = UInt16(volumeOSDValue)
@@ -136,7 +134,7 @@ class ExternalDisplay: Display {
       self.saveValue(volumeOSDValue, for: .audioSpeakerVolume)
 
       if volumeOSDValue > 0 {
-        self.playVolumeChangedSound()
+        playVolumeChangedSound(force: forceAudio)
       }
 
       if let slider = self.volumeSliderHandler?.slider {
@@ -322,13 +320,18 @@ class ExternalDisplay: Display {
 
   private func supportsMuteCommand() -> Bool {
     // Monitors which don't support the mute command - e.g. Dell U3419W - will have a maximum value of 100 for the DDC mute command
-    return self.getMaxValue(for: .audioMuteScreenBlank) == 2
+    return true
+//    return self.getMaxValue(for: .audioMuteScreenBlank) == 2
   }
+}
 
-  private func playVolumeChangedSound() {
-    let soundPath = "/System/Library/LoginPlugins/BezelServices.loginPlugin/Contents/Resources/volume.aiff"
-    let soundUrl = URL(fileURLWithPath: soundPath)
+private var audioPlayer: AVAudioPlayer?
 
+func playVolumeChangedSound(force: Bool) {
+  let soundPath = "/System/Library/LoginPlugins/BezelServices.loginPlugin/Contents/Resources/volume.aiff"
+  let soundUrl = URL(fileURLWithPath: soundPath)
+  
+  if !force {
     // Check if user has enabled "Play feedback when volume is changed" in Sound Preferences
     guard let preferences = Utils.getSystemPreferences(),
           let hasSoundEnabled = preferences["com.apple.sound.beep.feedback"] as? Int,
@@ -337,14 +340,14 @@ class ExternalDisplay: Display {
       os_log("sound not enabled", type: .info)
       return
     }
-
-    do {
-      self.audioPlayer = try AVAudioPlayer(contentsOf: soundUrl)
-      self.audioPlayer?.volume = 1
-      self.audioPlayer?.prepareToPlay()
-      self.audioPlayer?.play()
-    } catch {
-      os_log("%{public}@", type: .error, error.localizedDescription)
-    }
+  }
+  
+  do {
+    audioPlayer = try AVAudioPlayer(contentsOf: soundUrl)
+    audioPlayer?.volume = 1
+    audioPlayer?.prepareToPlay()
+    audioPlayer?.play()
+  } catch {
+    os_log("%{public}@", type: .error, error.localizedDescription)
   }
 }

@@ -285,22 +285,26 @@ extension AppDelegate: MediaKeyTapDelegate {
     }
     
     let isSmallIncrement = modifiers?.isSuperset(of: NSEvent.ModifierFlags([.option])) ?? false
-    let isShifted = modifiers?.isSuperset(of: NSEvent.ModifierFlags([.shift])) ?? false
-
-    if !isShifted && // When shifted control monitor
+    let isShifted = (modifiers?.isSuperset(of: NSEvent.ModifierFlags([.shift])) ?? false) && !isSmallIncrement
+    let isCmd = modifiers?.isSuperset(of: NSEvent.ModifierFlags([.command])) ?? false
+    
+    if !isCmd && // When cmd control monitor
         (mediaKey == .volumeUp || mediaKey == .volumeDown || mediaKey == .mute) && // only looking for volume keys
         MusicApp.shared.playing && // Only when Music is playing
         MusicApp.shared.airplaying { // And only when airplaying
       if mediaKey == .volumeUp {
-        MusicApp.shared.volume += isSmallIncrement ? 1 : 3
+        MusicApp.shared.volume += isSmallIncrement ? 1 : 2
       }
       else if mediaKey == .volumeDown {
-        MusicApp.shared.volume -= isSmallIncrement ? 1 : 3
+        MusicApp.shared.volume -= isSmallIncrement ? 1 : 2
       }
       else if mediaKey == .mute {
         MusicApp.shared.volume = 0
       }
+      
       DisplayManager.shared.getCurrentDisplay()?.showOsd(command: .audioSpeakerVolume, value: MusicApp.shared.volume)
+      
+      playVolumeChangedSound(force: isShifted)
       return
     }
     
@@ -325,10 +329,10 @@ extension AppDelegate: MediaKeyTapDelegate {
       }
       mediaKeyTimer.invalidate()
     }
-    self.sendDisplayCommand(mediaKey: mediaKey, isRepeat: isRepeat, isSmallIncrement: isSmallIncrement)
+    self.sendDisplayCommand(mediaKey: mediaKey, isRepeat: isRepeat, isSmallIncrement: isSmallIncrement, shifted: isShifted)
   }
 
-  private func sendDisplayCommand(mediaKey: MediaKey, isRepeat: Bool, isSmallIncrement: Bool) {
+  private func sendDisplayCommand(mediaKey: MediaKey, isRepeat: Bool, isSmallIncrement: Bool, shifted: Bool) {
     let displays = DisplayManager.shared.getAllDisplays()
     guard let currentDisplay = DisplayManager.shared.getCurrentDisplay() else { return }
 
@@ -347,13 +351,13 @@ extension AppDelegate: MediaKeyTapDelegate {
           if !isRepeat {
             // mute only matters for external displays
             if let display = display as? ExternalDisplay {
-              display.toggleMute()
+              display.toggleMute(forceAudio: shifted)
             }
           }
         case .volumeUp, .volumeDown:
           // volume only matters for external displays
           if let display = display as? ExternalDisplay {
-            display.stepVolume(isUp: mediaKey == .volumeUp, isSmallIncrement: isSmallIncrement)
+            display.stepVolume(isUp: mediaKey == .volumeUp, isSmallIncrement: isSmallIncrement, forceAudio: shifted)
           }
         default:
           return
