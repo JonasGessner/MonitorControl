@@ -5,6 +5,7 @@ import MediaKeyTap
 import os.log
 import Preferences
 import SimplyCoreAudio
+import Combine
 
 var app: AppDelegate!
 let prefs = UserDefaults.standard
@@ -39,6 +40,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     )
   }()
 
+  private var sub: AnyCancellable?
+  
   func applicationDidFinishLaunching(_: Notification) {
     app = self
     self.subscribeEventListeners()
@@ -49,6 +52,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     self.checkPermissions()
     CGDisplayRegisterReconfigurationCallback({ _, _, _ in app.updateDisplays() }, nil)
     self.updateDisplays()
+    
+    sub = MusicApp.shared.objectWillChange.sink {
+      self.updateMediaKeyTap()
+    }
   }
 
   @IBAction func quitClicked(_: AnyObject) {
@@ -293,10 +300,14 @@ extension AppDelegate: MediaKeyTapDelegate {
         MusicApp.shared.playing && // Only when Music is playing
         MusicApp.shared.airplaying { // And only when airplaying
       if mediaKey == .volumeUp {
-        MusicApp.shared.volume += isSmallIncrement ? 1 : 2
+        let small = MusicApp.shared.wantsSmallVolumeIncrements
+        
+        MusicApp.shared.volume += small ? (isSmallIncrement ? 1 : 2) : (isSmallIncrement ? 1 : 5)
       }
       else if mediaKey == .volumeDown {
-        MusicApp.shared.volume -= isSmallIncrement ? 1 : 2
+        let small = MusicApp.shared.wantsSmallVolumeIncrements
+        
+        MusicApp.shared.volume -= small ? (isSmallIncrement ? 1 : 2) : (isSmallIncrement ? 1 : 5)
       }
       else if mediaKey == .mute {
         MusicApp.shared.volume = 0
@@ -404,7 +415,9 @@ extension AppDelegate: MediaKeyTapDelegate {
     
     keys += [.next, .previous, .playPause]
 
-    if self.coreAudio.defaultOutputDevice?.canSetVirtualMasterVolume(scope: .output) == true {
+    if self.coreAudio.defaultOutputDevice?.canSetVirtualMasterVolume(scope: .output) == true &&
+        // When itunes is currently airplaying directly (i.e. the system volume is not airplaying but AirPlay is enabled directly in the iTunes playback) we want to control the itunes volume not the system volume
+        !(coreAudio.defaultOutputDevice?.transportType != .airPlay && MusicApp.shared.playing && MusicApp.shared.airplaying) {
       // Remove volume related keys.
       let keysToDelete: [MediaKey] = [.volumeUp, .volumeDown, .mute]
       keys.removeAll { keysToDelete.contains($0) }
