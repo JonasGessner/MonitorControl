@@ -24,17 +24,19 @@ final class MusicApp: ObservableObject {
   }
   
   private func updatePlaying() {
-      playing = app.isRunning && app.playerState != MusicEPlSPaused && app.playerState != MusicEPlSPaused
+      playing = app.isRunning && app.playerState == MusicEPlSPlaying
   }
   
   @objc private func musicChanged(_ ob: Notification) {
-    DispatchQueue.main.async {
+    // Delay a bit because see the comment for `airplaying`
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
       self.updatePlaying()
-      self.objectWillChange.send() // Abuse of this API because the object already changed but fuck this will change shit
 //      self.playing = (ob.userInfo?["Player State"] as? String) == "Playing"
+      self.objectWillChange.send() // Abuse of this API because the object already changed but fuck this will change shit
     }
   }
   
+  /// There can be a race condition when calling `airplaying` when Music is closing. `app.isRunning` will return yes, so then `app.airPlayEnabled` is called, which causes Music to open if it was closed. It can happen that Music is reopened because isRunning returned yes, but then the airPlayEnabled call causes it to re-launch
   var airplaying: Bool {
     return app.isRunning && app.airPlayEnabled
   }

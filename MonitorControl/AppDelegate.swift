@@ -417,7 +417,7 @@ extension AppDelegate: MediaKeyTapDelegate {
 
     if self.coreAudio.defaultOutputDevice?.canSetVirtualMasterVolume(scope: .output) == true &&
         // When itunes is currently airplaying directly (i.e. the system volume is not airplaying but AirPlay is enabled directly in the iTunes playback) we want to control the itunes volume not the system volume
-        !(coreAudio.defaultOutputDevice?.transportType != .airPlay && MusicApp.shared.playing && MusicApp.shared.airplaying) {
+        !(coreAudio.defaultOutputDevice?.transportType == .builtIn && MusicApp.shared.playing && MusicApp.shared.airplaying) {
       // Remove volume related keys.
       let keysToDelete: [MediaKey] = [.volumeUp, .volumeDown, .mute]
       keys.removeAll { keysToDelete.contains($0) }
